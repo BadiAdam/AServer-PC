@@ -41,11 +41,13 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
 
-            // İŞTE ÇİRKİN İSİM BURADAN DÜZELTİLDİ:
+            // İŞTE EKSİK OLAN O SİHİRLİ SATIR (Telemetri radarı ve kalkan için şart):
+            modules("java.management")
+
             packageName = "AServer"
             packageVersion = "1.0.0"
 
-            // OTOMATİK KISAYOL, BAŞLAT MENÜSÜ VE İKON AYARLARI EKLENDİ:
+            // OTOMATİK KISAYOL, BAŞLAT MENÜSÜ VE İKON AYARLARI:
             windows {
                 iconFile.set(project.file("src/jvmMain/resources/icon.ico"))
                 shortcut = true
