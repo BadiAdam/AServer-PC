@@ -44,6 +44,7 @@ import java.util.UUID
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
+import androidx.compose.animation.core.animateDpAsState
 
 // ============================================================================
 // ZOMBİ SÜREÇ (ORPHAN PROCESS) ÖNLEYİCİ - ÖLÜM FERMANI KANCASI (TASKKILL)
@@ -83,7 +84,9 @@ object AutoJava {
         return when {
             mcVersion.startsWith("1.8") || mcVersion.startsWith("1.12") || mcVersion.startsWith("1.16") -> 8
             mcVersion.startsWith("1.17") || mcVersion.startsWith("1.18") || mcVersion.startsWith("1.19") -> 17
-            else -> 21
+            mcVersion.startsWith("1.20") || mcVersion.startsWith("1.21") -> 21
+            // 26.1 ve gelecekteki tüm yeni sürümler için varsayılanı Java 25 yapıyoruz
+            else -> 25
         }
     }
 
@@ -418,7 +421,7 @@ fun NavItem(title: String, icon: androidx.compose.ui.graphics.vector.ImageVector
 }
 
 // ============================================================================
-// ANA UYGULAMA İSKELETİ
+// ANA UYGULAMA İSKELETİ (FLOATING UI - YÜZEN KATLANABİLİR MENÜ)
 // ============================================================================
 @Composable
 fun App() {
@@ -435,6 +438,10 @@ fun App() {
     var allocatedRam by remember { mutableStateOf("2") }
 
     val scheduledTasks = remember { mutableStateListOf<ScheduledTask>() }
+
+    // Yüzen Menü State'i
+    var isMenuExpanded by remember { mutableStateOf(false) }
+    val menuWidth by animateDpAsState(targetValue = if (isMenuExpanded) 240.dp else 80.dp)
 
     LaunchedEffect(isServerRunning, activeServerName) {
         if (isServerRunning && activeServerName.isNotEmpty()) {
@@ -486,23 +493,34 @@ fun App() {
     MaterialTheme(colors = darkColors(background = BgDeepDark)) {
         Row(modifier = Modifier.fillMaxSize().background(MaterialTheme.colors.background)) {
 
-            Column(modifier = Modifier.width(260.dp).fillMaxHeight().background(SurfaceDark).border(BorderStroke(1.dp, BorderColor)).padding(20.dp)) {
-
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 40.dp, top = 10.dp)) {
-                    Icon(Icons.Default.Dns, contentDescription = null, tint = AccentEmerald, modifier = Modifier.size(32.dp))
-                    Spacer(Modifier.width(12.dp))
-                    Text("AServer", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold)
+            // YÜZEN KATLANABİLİR MENÜ KISMI
+            Column(
+                modifier = Modifier
+                    .width(menuWidth)
+                    .fillMaxHeight()
+                    .background(SurfaceDark)
+                    .border(BorderStroke(1.dp, BorderColor))
+                    .padding(vertical = 20.dp, horizontal = 12.dp),
+                horizontalAlignment = if (isMenuExpanded) Alignment.Start else Alignment.CenterHorizontally
+            ) {
+                // Menü Toggle Butonu
+                IconButton(
+                    onClick = { isMenuExpanded = !isMenuExpanded },
+                    modifier = Modifier.padding(bottom = 30.dp)
+                ) {
+                    Icon(Icons.Default.Menu, contentDescription = "Menü", tint = AccentEmerald, modifier = Modifier.size(32.dp))
                 }
 
-                NavItem("Konsol", Icons.Default.Terminal, currentScreen == "Dashboard") { currentScreen = "Dashboard" }
-                Spacer(Modifier.height(8.dp))
-                NavItem("Sunucularım", Icons.Default.Storage, currentScreen == "MyServers") { currentScreen = "MyServers" }
-                Spacer(Modifier.height(8.dp))
-                NavItem("Dosya Yöneticisi", Icons.Default.Folder, currentScreen == "FileManager") { currentScreen = "FileManager" }
-                Spacer(Modifier.height(8.dp))
-                NavItem("Oyuncular", Icons.Default.People, currentScreen == "Players") { currentScreen = "Players" }
-                Spacer(Modifier.height(8.dp))
-                NavItem("Yeni Sunucu", Icons.Default.AddCircle, currentScreen == "CreateServer") { currentScreen = "CreateServer" }
+                // Navigasyon İtemleri
+                NavItem(if(isMenuExpanded) "Konsol" else "", Icons.Default.Terminal, currentScreen == "Dashboard") { currentScreen = "Dashboard" }
+                Spacer(Modifier.height(12.dp))
+                NavItem(if(isMenuExpanded) "Sunucularım" else "", Icons.Default.Storage, currentScreen == "MyServers") { currentScreen = "MyServers" }
+                Spacer(Modifier.height(12.dp))
+                NavItem(if(isMenuExpanded) "Dosyalar" else "", Icons.Default.Folder, currentScreen == "FileManager") { currentScreen = "FileManager" }
+                Spacer(Modifier.height(12.dp))
+                NavItem(if(isMenuExpanded) "Oyuncular" else "", Icons.Default.People, currentScreen == "Players") { currentScreen = "Players" }
+                Spacer(Modifier.height(12.dp))
+                NavItem(if(isMenuExpanded) "Yeni Sunucu" else "", Icons.Default.AddCircle, currentScreen == "CreateServer") { currentScreen = "CreateServer" }
             }
 
             Box(modifier = Modifier.fillMaxSize()) {
@@ -510,7 +528,8 @@ fun App() {
                     "Dashboard" -> DashboardScreen(
                         activeServerName = activeServerName,
                         consoleText = consoleText,
-                        onConsoleTextChange = { newText ->
+                        onConsoleAppend = { appendedText ->
+                            val newText = consoleText + appendedText
                             val lines = newText.split("\n")
                             consoleText = if (lines.size > 500) lines.takeLast(500).joinToString("\n") else newText
                         },
@@ -721,10 +740,13 @@ fun PlayersScreen(activeServerName: String, isServerRunning: Boolean, isServerRe
 // ============================================================================
 // EKRAN: DASHBOARD (ZOMBİ MOTOR KALKANI GÜNCELLENDİ)
 // ============================================================================
+// ============================================================================
+// EKRAN: DASHBOARD (BENTO BOX MİMARİSİ)
+// ============================================================================
 @Composable
 fun DashboardScreen(
     activeServerName: String,
-    consoleText: String, onConsoleTextChange: (String) -> Unit,
+    consoleText: String, onConsoleAppend: (String) -> Unit,
     isServerRunning: Boolean, onServerRunningChange: (Boolean) -> Unit,
     isServerReady: Boolean,
     isProcessing: Boolean, onProcessingChange: (Boolean) -> Unit,
@@ -740,12 +762,6 @@ fun DashboardScreen(
     var playitLink by remember { mutableStateOf<String?>(null) }
     var copyStatus by remember { mutableStateOf("") }
     var commandInput by remember { mutableStateOf("") }
-
-    var showTaskDialog by remember { mutableStateOf(false) }
-    var taskType by remember { mutableStateOf("Duyuru") }
-    var taskPayload by remember { mutableStateOf("") }
-    var taskInterval by remember { mutableStateOf(10f) }
-
     var isShuttingDown by remember { mutableStateOf(false) }
 
     var isPlayitEnabled by remember { mutableStateOf(false) }
@@ -756,14 +772,7 @@ fun DashboardScreen(
     var systemTotalRamGb by remember { mutableStateOf(0.0) }
     var currentCpuUsage by remember { mutableStateOf(0.0) }
 
-    val macroCommands = listOf(
-        "Sabah Yap" to "time set day",
-        "Gece Yap" to "time set night",
-        "Hava Açık" to "weather clear",
-        "Yaratıcı Mod (@a)" to "gamemode creative @a",
-        "Hayatta Kalma (@a)" to "gamemode survival @a",
-        "Tümünü Kaydet" to "save-all"
-    )
+    val macroCommands = listOf("Sabah" to "time set day", "Gece" to "time set night", "Yağmuru Kapat" to "weather clear", "Tümünü Kaydet" to "save-all")
 
     LaunchedEffect(consoleText) { scrollState.animateScrollTo(scrollState.maxValue) }
 
@@ -779,13 +788,11 @@ fun DashboardScreen(
                 serverPort = portLine?.substringAfter("=")?.trim() ?: "25565"
             }
         }
-
         if (!isServerRunning) isShuttingDown = false
 
         if (isServerRunning) {
             val serverDir = File(System.getProperty("user.home"), "Desktop/AServer/servers/$activeServerName")
             val playitLogFile = File(serverDir, "playit_log.txt")
-
             while (isServerRunning) {
                 if (playitLogFile.exists()) {
                     try {
@@ -796,18 +803,13 @@ fun DashboardScreen(
                         var tempIp: String? = null
                         for (m in matches) {
                             val found = m.value
-                            if (found != "playit.gg" && found != "api.playit.gg" && !found.contains("playit.gg/claim")) {
-                                tempIp = found
-                                break
-                            }
+                            if (found != "playit.gg" && found != "api.playit.gg" && !found.contains("playit.gg/claim")) { tempIp = found; break }
                         }
                         if (tempIp != null) playitIp = tempIp
 
                         if (playitIp == null) {
                             val match = Regex("https://playit\\.gg/claim/[a-zA-Z0-9]+").find(cleanText)
-                            if (match != null && playitLink != match.value) {
-                                playitLink = match.value
-                            }
+                            if (match != null && playitLink != match.value) { playitLink = match.value }
                         }
                     } catch (e: Exception) {}
                 }
@@ -825,9 +827,7 @@ fun DashboardScreen(
             while (isServerRunning) {
                 val pid = try { activeProcess?.pid() ?: -1L } catch(e: Exception) { -1L }
                 withContext(Dispatchers.IO) {
-                    if (pid != -1L) {
-                        currentServerRamMb = getProcessRamUsage(pid)
-                    }
+                    if (pid != -1L) { currentServerRamMb = getProcessRamUsage(pid) }
                     currentCpuUsage = getSystemCpuLoad()
                     val ramInfo = getSystemRamInfo()
                     systemUsedRamGb = ramInfo.first
@@ -836,442 +836,283 @@ fun DashboardScreen(
                 delay(3000)
             }
         } else {
-            currentServerRamMb = 0.0
-            currentCpuUsage = 0.0
-            systemUsedRamGb = 0.0
-            systemTotalRamGb = 0.0
+            currentServerRamMb = 0.0; currentCpuUsage = 0.0; systemUsedRamGb = 0.0; systemTotalRamGb = 0.0
         }
     }
 
-    if (showTaskDialog) {
-        AlertDialog(
-            onDismissRequest = { showTaskDialog = false },
-            backgroundColor = CardDark,
-            modifier = Modifier.width(500.dp).clip(RoundedCornerShape(16.dp)).border(1.dp, BorderColor, RoundedCornerShape(16.dp)),
-            title = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Timer, contentDescription = null, tint = AccentOrange)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Otomasyon ve Zamanlayıcı", color = Color.White, fontWeight = FontWeight.Bold)
-                }
-            },
-            text = {
-                Column {
-                    Card(backgroundColor = SurfaceDark, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Text("Yeni Görev Ekle", color = AccentEmerald, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            Spacer(Modifier.height(12.dp))
-                            CustomDropdownMenu("Görev Türü", listOf("Duyuru", "Komut"), taskType) { taskType = it }
-                            Spacer(Modifier.height(12.dp))
-                            OutlinedTextField(
-                                value = taskPayload, onValueChange = { taskPayload = it },
-                                label = { Text(if (taskType == "Duyuru") "Gönderilecek Mesaj" else "Çalıştırılacak Komut (Örn: save-all)", color = Color.Gray) },
-                                colors = TextFieldDefaults.outlinedTextFieldColors(textColor = Color.White, focusedBorderColor = AccentEmerald),
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            Spacer(Modifier.height(12.dp))
-                            Text("Tekrar Etme Süresi: ${taskInterval.toInt()} dakika", color = Color.LightGray, fontSize = 12.sp)
-                            Slider(value = taskInterval, onValueChange = { taskInterval = it }, valueRange = 1f..60f, colors = SliderDefaults.colors(thumbColor = AccentEmerald, activeTrackColor = AccentEmerald))
-                            Button(
-                                onClick = {
-                                    if (taskPayload.isNotBlank()) {
-                                        scheduledTasks.add(ScheduledTask(type = taskType, payload = taskPayload, intervalMinutes = taskInterval))
-                                        taskPayload = ""
-                                    }
-                                },
-                                colors = ButtonDefaults.buttonColors(backgroundColor = AccentEmerald), modifier = Modifier.align(Alignment.End), shape = RoundedCornerShape(8.dp)
-                            ) { Text("EKLE", color = Color.Black, fontWeight = FontWeight.Bold) }
-                        }
-                    }
-
-                    if (scheduledTasks.isNotEmpty()) {
-                        Text("Aktif Görevler", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
-                        LazyColumn(modifier = Modifier.heightIn(max = 200.dp)) {
-                            items(scheduledTasks) { task ->
-                                Card(backgroundColor = SurfaceDark, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
-                                    Row(modifier = Modifier.padding(12.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(task.type, color = AccentEmerald, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                            Text(task.payload, color = Color.White, fontSize = 14.sp)
-                                            Text("Her ${task.intervalMinutes.toInt()} dakikada bir", color = Color.Gray, fontSize = 10.sp)
-                                        }
-                                        Switch(
-                                            checked = task.isRunning,
-                                            onCheckedChange = { isChecked ->
-                                                val index = scheduledTasks.indexOf(task)
-                                                if (index != -1) scheduledTasks[index] = task.copy(isRunning = isChecked)
-                                            },
-                                            colors = SwitchDefaults.colors(checkedThumbColor = AccentEmerald)
-                                        )
-                                        IconButton(onClick = { scheduledTasks.remove(task) }) { Icon(Icons.Default.Delete, contentDescription = "Sil", tint = AccentRed) }
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        Text("Henüz bir otomasyon görevi eklenmedi.", color = Color.Gray, fontSize = 12.sp)
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { showTaskDialog = false }) { Text("Kapat", color = Color.Gray) } }
-        )
-    }
-
-    Column(modifier = Modifier.fillMaxSize().padding(40.dp)) {
+    Column(modifier = Modifier.fillMaxSize().padding(32.dp)) {
         if (activeServerName.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("Lütfen 'Sunucularım' sekmesinden sunucu seçin.", color = Color.Gray) }
             return@Column
         }
 
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column {
-                    Text("Konsol: $activeServerName", color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = when {
-                            isServerReady && !isShuttingDown -> "Sistem durumu: 🟢 AKTİF"
-                            isShuttingDown -> "Sistem durumu: 🟠 KAPATILIYOR... (Harita Kaydediliyor)"
-                            isServerRunning -> "Sistem durumu: 🟡 BAŞLATILIYOR... (Lütfen bekleyin)"
-                            isProcessing -> "Sistem durumu: 🟡 İşlem yapılıyor..."
-                            else -> "Sistem durumu: 🔴 Çevrimdışı"
-                        },
-                        color = when {
-                            isServerReady && !isShuttingDown -> AccentEmerald
-                            isShuttingDown || isServerRunning || isProcessing -> AccentOrange
-                            else -> Color.Gray
-                        },
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-                if (isServerReady && !isShuttingDown) {
-                    Spacer(Modifier.width(20.dp))
-                    IconButton(onClick = { showTaskDialog = true }, modifier = Modifier.background(CardDark, RoundedCornerShape(12.dp)).border(1.dp, BorderColor, RoundedCornerShape(12.dp))) {
-                        Icon(Icons.Default.Timer, contentDescription = "Otomasyon", tint = AccentOrange)
-                    }
-                }
-            }
+        // BENTO GRID MİMARİSİ BAŞLIYOR
+        // ÜST SATIR (Statü Kutusu ve Donanım Kutusu)
+        Row(modifier = Modifier.fillMaxWidth().height(160.dp), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
 
-            Button(
-                onClick = {
-                    if (isServerRunning && !isShuttingDown) {
-                        isShuttingDown = true
-                        coroutineScope.launch(Dispatchers.IO) {
-                            withContext(Dispatchers.Main) { onConsoleTextChange(consoleText + "\n[Sistem] Kapatma komutu gönderiliyor...") }
-
-                            // TIKANIKLIK ÇÖZÜLDÜ: Doğrudan baytları gönder ve boruyu zorla boşalt
-                            try {
-                                val out = activeProcess?.outputStream
-                                out?.write("stop\n".toByteArray(Charsets.UTF_8))
-                                out?.flush()
-                            } catch (e: Exception) {}
-
-                            // NOT: Playit'i burada anında öldürmüyoruz.
-                            // Ana döngü (process.waitFor) sunucunun kapandığını algılayınca kendi öldürecek.
-
-                            // SİGORTA: Eğer sunucu 15 saniye içinde kapanmazsa, ZORLA öldür (Anti-Softlock)
-                            delay(15000)
-                            if (activeProcess?.isAlive == true) {
-                                withContext(Dispatchers.Main) { onConsoleTextChange(consoleText + "\n[Sistem] Sunucu yanıt vermiyor, zorla kapatılıyor (Timeout)!") }
-                                ProcessManager.killProcessTree(activeProcess)
-                                ProcessManager.killProcessTree(activePlayitProcess)
-                            }
-                        }
-                    } else if (!isProcessing && !isServerRunning && !isShuttingDown) {
-                        onProcessingChange(true)
-                        coroutineScope.launch(Dispatchers.IO) {
-                            try {
-                                val serverDir = File(System.getProperty("user.home"), "Desktop/AServer/servers/$activeServerName")
-
-                                val propsFile = File(serverDir, "server.properties")
-                                var portToCheck = 25565
-                                if (propsFile.exists()) {
-                                    val portLine = propsFile.readLines().find { it.startsWith("server-port=") }
-                                    portToCheck = portLine?.substringAfter("=")?.trim()?.toIntOrNull() ?: 25565
-                                }
-
-                                if (!isPortAvailable(portToCheck)) {
-                                    withContext(Dispatchers.Main) {
-                                        onConsoleTextChange(consoleText + "\n[HATA] $portToCheck numaralı port şu an meşgul! \n[ÇÖZÜM] Arka planda asılı kalmış bir Java işlemi olabilir veya başka bir program bu portu kullanıyor.")
-                                        onProcessingChange(false)
-                                    }
-                                    return@launch
-                                }
-
-                                val mcVerFile = File(serverDir, "mc_version.txt")
-                                val mcVersion = if (mcVerFile.exists()) mcVerFile.readText().trim() else "1.20.4"
-
-                                val javaCmd = AutoJava.ensureJavaAndGetPath(mcVersion) { logMsg ->
-                                    withContext(Dispatchers.Main) { onConsoleTextChange(consoleText + "\n" + logMsg) }
-                                }
-
-                                val playitEnabledFile = File(serverDir, "playit_enabled.txt")
-                                val playitEnabled = if (playitEnabledFile.exists()) playitEnabledFile.readText() == "true" else false
-
-                                if (playitEnabled) {
-                                    withContext(Dispatchers.Main) { onConsoleTextChange(consoleText + "\n[Sistem] Playit Tüneli (Uzak Bağlantı) hazırlanıyor...") }
-                                    val playitExe = File(serverDir, "playit.exe")
-                                    if (!playitExe.exists()) {
-                                        withContext(Dispatchers.Main) { onConsoleTextChange(consoleText + "\n[Sistem] Windows için Playit indiriliyor (İlk Kurulum)...") }
-                                        val dl = URL("https://github.com/playit-cloud/playit-agent/releases/latest/download/playit-windows-x86_64.exe")
-                                        dl.openStream().use { inp -> playitExe.outputStream().use { out -> inp.copyTo(out) } }
-                                        withContext(Dispatchers.Main) { onConsoleTextChange(consoleText + "\n[Sistem] Playit başarıyla indirildi.") }
-                                    }
-
-                                    val pPb = ProcessBuilder(playitExe.absolutePath)
-                                    pPb.directory(serverDir)
-                                    val logFile = File(serverDir, "playit_log.txt")
-                                    if(logFile.exists()) logFile.delete()
-
-                                    pPb.redirectOutput(logFile)
-                                    pPb.redirectErrorStream(true)
-                                    val pProcess = pPb.start()
-
-                                    ProcessManager.playitProcess = pProcess
-                                    withContext(Dispatchers.Main) { onPlayitProcessChange(pProcess) }
-                                }
-
-                                if (propsFile.exists()) {
-                                    var propsContent = propsFile.readText()
-                                    if (!propsContent.contains("enable-rcon=true")) {
-                                        propsContent += "\nenable-rcon=true\nrcon.port=25575\nrcon.password=aserver123\n"
-                                        propsFile.writeText(propsContent)
-                                    }
-                                }
-
-                                val ramFile = File(serverDir, "ram.txt")
-                                val ramGb = if (ramFile.exists()) ramFile.readText().trim() else "2"
-                                withContext(Dispatchers.Main) { onRamChange(ramGb) }
-
-                                val fabricLaunch = File(serverDir, "fabric-server-launch.jar")
-                                val jarToRun = if (fabricLaunch.exists()) "fabric-server-launch.jar" else "server.jar"
-
-                                if (!File(serverDir, jarToRun).exists()) {
-                                    withContext(Dispatchers.Main) {
-                                        onConsoleTextChange(consoleText + "\n[HATA] $jarToRun bulunamadı!")
-                                        onProcessingChange(false)
-                                    }
-                                    return@launch
-                                }
-
-                                withContext(Dispatchers.Main) {
-                                    onConsoleTextChange(consoleText + "\n[Sistem] Sunucu motoru ateşleniyor ($ramGb GB RAM)...")
-                                }
-
-                                val pb = ProcessBuilder(javaCmd, "-Xmx${ramGb}G", "-Xms${ramGb}G", "-jar", jarToRun, "nogui")
-                                pb.directory(serverDir)
-                                pb.redirectErrorStream(true)
-                                val process = pb.start()
-
-                                ProcessManager.serverProcess = process
-
-                                withContext(Dispatchers.Main) {
-                                    onActiveProcessChange(process)
-                                    onServerRunningChange(true)
-                                    onProcessingChange(false)
-                                }
-
-                                val reader = BufferedReader(InputStreamReader(process.inputStream))
-                                var line: String?
-                                while (reader.readLine().also { line = it } != null) {
-                                    withContext(Dispatchers.Main) {
-                                        val newText = consoleText + "\n$line"
-                                        val lines = newText.split("\n")
-                                        onConsoleTextChange(if (lines.size > 500) lines.takeLast(500).joinToString("\n") else newText)
-                                    }
-                                }
-
-                                process.waitFor()
-
-                                ProcessManager.serverProcess = null
-                                ProcessManager.killProcessTree(activePlayitProcess)
-                                ProcessManager.playitProcess = null
-
-                                withContext(Dispatchers.Main) {
-                                    isShuttingDown = false
-                                    onServerRunningChange(false)
-                                    onActiveProcessChange(null)
-                                    onPlayitProcessChange(null)
-                                    onConsoleTextChange(consoleText + "\n[Sistem] Sunucu durduruldu.")
-                                }
-                            } catch (e: Exception) {
-                                ProcessManager.serverProcess = null
-                                ProcessManager.killProcessTree(activePlayitProcess)
-                                ProcessManager.playitProcess = null
-
-                                withContext(Dispatchers.Main) {
-                                    isShuttingDown = false
-                                    onConsoleTextChange(consoleText + "\n[HATA] ${e.message}")
-                                    onProcessingChange(false)
-                                    onServerRunningChange(false)
-                                    onPlayitProcessChange(null)
-                                }
-                            }
+            // Kutu 1: Statü ve Ana Şalter (Bento)
+            Card(backgroundColor = CardDark, shape = RoundedCornerShape(16.dp), border = BorderStroke(1.dp, BorderColor), modifier = Modifier.weight(1f).fillMaxHeight()) {
+                Row(modifier = Modifier.fillMaxSize().padding(20.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(activeServerName, color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(8.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(modifier = Modifier.size(10.dp).clip(RoundedCornerShape(50)).background(when {
+                                isServerReady && !isShuttingDown -> AccentEmerald
+                                isShuttingDown || isServerRunning || isProcessing -> AccentOrange
+                                else -> AccentRed
+                            }))
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = when {
+                                    isServerReady && !isShuttingDown -> "Sistem Çevrimiçi"
+                                    isShuttingDown -> "Kapatılıyor..."
+                                    isServerRunning -> "Başlatılıyor..."
+                                    isProcessing -> "İşlem Yapılıyor..."
+                                    else -> "Sistem Çevrimdışı"
+                                },
+                                color = Color.LightGray, fontSize = 14.sp
+                            )
                         }
                     }
-                },
-                colors = ButtonDefaults.buttonColors(
-                    backgroundColor = when {
-                        isShuttingDown -> AccentOrange
-                        isServerRunning -> AccentRed
-                        isProcessing -> Color.Gray
-                        else -> AccentEmerald
-                    }
-                ),
-                modifier = Modifier.height(55.dp).padding(horizontal = 8.dp),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Text(
-                    text = when {
-                        isShuttingDown -> "KAPANIYOR..."
-                        isServerRunning -> "⏹ STOP SERVER"
-                        isProcessing -> "BEKLEYİN..."
-                        else -> "▶ START SERVER"
-                    },
-                    color = Color.Black, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp
-                )
-            }
-        }
-        Spacer(modifier = Modifier.height(16.dp))
 
-        if (isServerRunning) {
-            val srvRam = String.format(java.util.Locale.US, "%.2f", currentServerRamMb / 1024.0)
-            val sysUsedRam = String.format(java.util.Locale.US, "%.1f", systemUsedRamGb)
-            val sysTotRam = String.format(java.util.Locale.US, "%.1f", systemTotalRamGb)
-            val cpuStr = String.format(java.util.Locale.US, "%.1f", currentCpuUsage)
-
-            Card(backgroundColor = SurfaceDark, shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, BorderColor), modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("💾 Sunucu RAM:", color = AccentBlue, fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.width(120.dp))
-                        Text("$srvRam GB / $allocatedRam GB (Ayrılan Sınır)", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("🖥️ Sistem RAM:", color = AccentEmerald, fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.width(120.dp))
-                        Text("$sysUsedRam GB / $sysTotRam GB (Tüm PC)", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("⚙️ Sistem CPU:", color = AccentOrange, fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.width(120.dp))
-                        Text("%$cpuStr (Genel Yük)", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                    }
-                }
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-        }
-
-        if (!isPlayitEnabled) {
-            Card(
-                backgroundColor = SurfaceDark, shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, BorderColor),
-                modifier = Modifier.fillMaxWidth().clickable {
-                    val selection = StringSelection("127.0.0.1:$serverPort")
-                    Toolkit.getDefaultToolkit().systemClipboard.setContents(selection, selection)
-                    copyStatus = " (Kopyalandı!)"
-                }
-            ) {
-                Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Dns, contentDescription = null, tint = AccentEmerald)
-                    Spacer(Modifier.width(8.dp))
-                    Text("YEREL BAĞLANTI (LOCALHOST): 127.0.0.1:$serverPort $copyStatus", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                }
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-        } else {
-            if (playitLink != null && playitIp == null) {
-                Button(
-                    onClick = { try { Desktop.getDesktop().browse(URI(playitLink!!)) } catch(e: Exception){} },
-                    colors = ButtonDefaults.buttonColors(backgroundColor = AccentOrange), modifier = Modifier.fillMaxWidth().height(55.dp), shape = RoundedCornerShape(12.dp)
-                ) {
-                    Icon(Icons.Default.Link, contentDescription = null, tint = Color.Black)
-                    Spacer(Modifier.width(8.dp))
-                    Text("PLAYIT HESABINI BAĞLA (Tarayıcıda Açmak İçin Tıkla)", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-            } else if (playitIp != null) {
-                Card(
-                    backgroundColor = AccentBlue, shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth().clickable {
-                        val selection = StringSelection(playitIp)
-                        Toolkit.getDefaultToolkit().systemClipboard.setContents(selection, selection)
-                        copyStatus = " (Kopyalandı!)"
-                    }
-                ) {
-                    Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Share, contentDescription = null, tint = Color.White)
-                        Spacer(Modifier.width(8.dp))
-                        Text("UZAK BAĞLANTI IP: $playitIp $copyStatus", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                    }
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-            }
-        }
-
-        if (isServerReady && !isShuttingDown) {
-            LazyRow(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(macroCommands) { macro ->
                     Button(
                         onClick = {
-                            sendRconCommand(macro.second) { res ->
-                                coroutineScope.launch(Dispatchers.Main) {
-                                    onConsoleTextChange(consoleText + "\n[MAKRO] ${macro.first} -> " + if (res.isNotBlank()) res else "Başarılı")
+                            if (isServerRunning && !isShuttingDown) {
+                                isShuttingDown = true
+                                coroutineScope.launch(Dispatchers.IO) {
+                                    withContext(Dispatchers.Main) { onConsoleAppend("\n[Sistem] Kapatma komutu gönderiliyor...") }
+                                    try {
+                                        val out = activeProcess?.outputStream
+                                        out?.write("stop\n".toByteArray(Charsets.UTF_8))
+                                        out?.flush()
+                                    } catch (e: Exception) {}
+                                    delay(15000)
+                                    if (activeProcess?.isAlive == true) {
+                                        withContext(Dispatchers.Main) { onConsoleAppend("\n[Sistem] Sunucu zorla kapatılıyor (Timeout)!") }
+                                        ProcessManager.killProcessTree(activeProcess)
+                                        ProcessManager.killProcessTree(activePlayitProcess)
+                                    }
+                                }
+                            } else if (!isProcessing && !isServerRunning && !isShuttingDown) {
+                                onProcessingChange(true)
+                                coroutineScope.launch(Dispatchers.IO) {
+                                    try {
+                                        val serverDir = File(System.getProperty("user.home"), "Desktop/AServer/servers/$activeServerName")
+                                        val propsFile = File(serverDir, "server.properties")
+                                        var portToCheck = 25565
+                                        if (propsFile.exists()) {
+                                            val portLine = propsFile.readLines().find { it.startsWith("server-port=") }
+                                            portToCheck = portLine?.substringAfter("=")?.trim()?.toIntOrNull() ?: 25565
+                                        }
+
+                                        if (!isPortAvailable(portToCheck)) {
+                                            withContext(Dispatchers.Main) {
+                                                onConsoleAppend("\n[HATA] $portToCheck portu dolu!")
+                                                onProcessingChange(false)
+                                            }
+                                            return@launch
+                                        }
+
+                                        val mcVerFile = File(serverDir, "mc_version.txt")
+                                        val mcVersion = if (mcVerFile.exists()) mcVerFile.readText().trim() else "1.20.4"
+
+                                        val javaCmd = AutoJava.ensureJavaAndGetPath(mcVersion) { logMsg -> withContext(Dispatchers.Main) { onConsoleAppend("\n" + logMsg) } }
+
+                                        val playitEnabledFile = File(serverDir, "playit_enabled.txt")
+                                        val playitEnabled = if (playitEnabledFile.exists()) playitEnabledFile.readText() == "true" else false
+
+                                        if (playitEnabled) {
+                                            val playitExe = File(serverDir, "playit.exe")
+                                            if (!playitExe.exists()) {
+                                                val dl = URL("https://github.com/playit-cloud/playit-agent/releases/latest/download/playit-windows-x86_64.exe")
+                                                dl.openStream().use { inp -> playitExe.outputStream().use { out -> inp.copyTo(out) } }
+                                            }
+                                            val pPb = ProcessBuilder(playitExe.absolutePath).directory(serverDir)
+                                            val logFile = File(serverDir, "playit_log.txt")
+                                            if(logFile.exists()) logFile.delete()
+                                            pPb.redirectOutput(logFile)
+                                            pPb.redirectErrorStream(true)
+                                            val pProcess = pPb.start()
+                                            ProcessManager.playitProcess = pProcess
+                                            withContext(Dispatchers.Main) { onPlayitProcessChange(pProcess) }
+                                        }
+
+                                        val ramFile = File(serverDir, "ram.txt")
+                                        val ramGb = if (ramFile.exists()) ramFile.readText().trim() else "2"
+                                        withContext(Dispatchers.Main) { onRamChange(ramGb) }
+
+                                        val fabricLaunch = File(serverDir, "fabric-server-launch.jar")
+                                        val jarToRun = if (fabricLaunch.exists()) "fabric-server-launch.jar" else "server.jar"
+
+                                        val pb = ProcessBuilder(javaCmd, "-Xmx${ramGb}G", "-Xms${ramGb}G", "-jar", jarToRun, "nogui").directory(serverDir).redirectErrorStream(true)
+                                        val process = pb.start()
+
+                                        ProcessManager.serverProcess = process
+
+                                        withContext(Dispatchers.Main) {
+                                            onActiveProcessChange(process)
+                                            onServerRunningChange(true)
+                                            onProcessingChange(false)
+                                        }
+
+                                        val reader = BufferedReader(InputStreamReader(process.inputStream))
+                                        var line: String?
+                                        while (reader.readLine().also { line = it } != null) {
+                                            withContext(Dispatchers.Main) { onConsoleAppend("\n$line") }
+                                        }
+                                        process.waitFor()
+
+                                        ProcessManager.serverProcess = null
+                                        ProcessManager.killProcessTree(activePlayitProcess)
+                                        ProcessManager.playitProcess = null
+
+                                        withContext(Dispatchers.Main) {
+                                            isShuttingDown = false
+                                            onServerRunningChange(false)
+                                            onActiveProcessChange(null)
+                                            onPlayitProcessChange(null)
+                                            onConsoleAppend("\n[Sistem] Sunucu durduruldu.")
+                                        }
+                                    } catch (e: Exception) {
+                                        ProcessManager.serverProcess = null
+                                        ProcessManager.killProcessTree(activePlayitProcess)
+                                        ProcessManager.playitProcess = null
+                                        withContext(Dispatchers.Main) {
+                                            isShuttingDown = false
+                                            onConsoleAppend("\n[HATA] ${e.message}")
+                                            onProcessingChange(false)
+                                            onServerRunningChange(false)
+                                            onPlayitProcessChange(null)
+                                        }
+                                    }
                                 }
                             }
                         },
-                        colors = ButtonDefaults.buttonColors(backgroundColor = SurfaceDark),
+                        colors = ButtonDefaults.buttonColors(backgroundColor = when {
+                            isShuttingDown -> AccentOrange
+                            isServerRunning -> AccentRed
+                            isProcessing -> Color.Gray
+                            else -> AccentEmerald
+                        }),
                         shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.height(40.dp).border(1.dp, BorderColor, RoundedCornerShape(12.dp))
-                    ) { Text(macro.first, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
+                        modifier = Modifier.width(160.dp).height(55.dp)
+                    ) {
+                        Text(
+                            text = when {
+                                isShuttingDown -> "KAPANIYOR"
+                                isServerRunning -> "DURDUR"
+                                isProcessing -> "BEKLEYİN"
+                                else -> "BAŞLAT"
+                            },
+                            color = Color.Black, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp
+                        )
+                    }
+                }
+            }
+
+            // Kutu 2: Telemetri (Bento)
+            Card(backgroundColor = CardDark, shape = RoundedCornerShape(16.dp), border = BorderStroke(1.dp, BorderColor), modifier = Modifier.weight(1f).fillMaxHeight()) {
+                Column(modifier = Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.Center) {
+                    val srvRam = String.format(java.util.Locale.US, "%.1f", currentServerRamMb / 1024.0)
+                    val sysUsedRam = String.format(java.util.Locale.US, "%.1f", systemUsedRamGb)
+                    val sysTotRam = String.format(java.util.Locale.US, "%.1f", systemTotalRamGb)
+                    val cpuStr = String.format(java.util.Locale.US, "%.1f", currentCpuUsage)
+
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Column { Text("Sunucu RAM", color = Color.Gray, fontSize = 12.sp); Text("$srvRam / $allocatedRam GB", color = AccentBlue, fontWeight = FontWeight.Bold, fontSize = 16.sp) }
+                        Column(horizontalAlignment = Alignment.End) { Text("Sistem RAM", color = Color.Gray, fontSize = 12.sp); Text("$sysUsedRam / $sysTotRam GB", color = AccentEmerald, fontWeight = FontWeight.Bold, fontSize = 16.sp) }
+                    }
+                    Spacer(Modifier.height(16.dp))
+                    Text("CPU Kullanımı: %$cpuStr", color = AccentOrange, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    LinearProgressIndicator(progress = (currentCpuUsage / 100.0).toFloat(), color = AccentOrange, backgroundColor = SurfaceDark, modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(50)))
                 }
             }
         }
 
-        Box(modifier = Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color.Black).border(1.dp, BorderColor, RoundedCornerShape(16.dp)).padding(20.dp)) {
-            Column(modifier = Modifier.verticalScroll(scrollState)) {
-                Text(text = consoleText, color = Color(0xFFA3BE8C), fontFamily = FontFamily.Monospace, fontSize = 14.sp, lineHeight = 20.sp)
+        Spacer(Modifier.height(20.dp))
+
+        // ORTA SATIR (Bağlantı Bilgisi ve Kısayollar)
+        // DÜZELTME: Buraya .height(90.dp) ekledik ki sonsuza kadar uzayıp terminali ezmesin!
+        Row(modifier = Modifier.fillMaxWidth().height(90.dp), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+            // Kutu 3: IP ve Ağ (Bento)
+            Card(backgroundColor = SurfaceDark, shape = RoundedCornerShape(12.dp), modifier = Modifier.weight(1f).fillMaxHeight()) {
+                Row(modifier = Modifier.fillMaxSize().clickable {
+                    val target = if (!isPlayitEnabled) "127.0.0.1:$serverPort" else playitIp ?: ""
+                    if(target.isNotEmpty()) {
+                        val sel = StringSelection(target)
+                        Toolkit.getDefaultToolkit().systemClipboard.setContents(sel, sel)
+                        copyStatus = " (Kopyalandı!)"
+                    }
+                }.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(if(!isPlayitEnabled) Icons.Default.Dns else Icons.Default.Public, contentDescription = null, tint = AccentEmerald)
+                    Spacer(Modifier.width(12.dp))
+                    Column(verticalArrangement = Arrangement.Center) {
+                        Text(if(!isPlayitEnabled) "Yerel Bağlantı (Localhost)" else "Uzak Bağlantı (Playit)", color = Color.Gray, fontSize = 12.sp)
+                        Text(
+                            text = if(!isPlayitEnabled) "127.0.0.1:$serverPort $copyStatus" else if(playitIp != null) "$playitIp $copyStatus" else "Bağlantı Bekleniyor...",
+                            color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp
+                        )
+                    }
+                }
+            }
+
+            // Kutu 4: Hızlı Makrolar (Bento)
+            Card(backgroundColor = SurfaceDark, shape = RoundedCornerShape(12.dp), modifier = Modifier.weight(1f).fillMaxHeight()) {
+                LazyRow(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    items(macroCommands) { macro ->
+                        Button(
+                            onClick = { sendRconCommand(macro.second) { res -> coroutineScope.launch(Dispatchers.Main) { onConsoleAppend("\n[MAKRO] ${macro.first} -> " + if (res.isNotBlank()) res else "Başarılı") } } },
+                            colors = ButtonDefaults.buttonColors(backgroundColor = CardDark), shape = RoundedCornerShape(8.dp), modifier = Modifier.height(45.dp).border(1.dp, BorderColor, RoundedCornerShape(8.dp))
+                        ) { Text(macro.first, color = Color.LightGray, fontSize = 12.sp) }
+                    }
+                }
             }
         }
 
-        if (isServerRunning && !isShuttingDown) {
-            Row(modifier = Modifier.fillMaxWidth().padding(top = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(
-                    value = commandInput, onValueChange = { commandInput = it },
-                    placeholder = { Text(if(isServerReady) "Komut yazın (Örn: say Merhaba)..." else "Sunucu başlatılırken komut gönder...", color = Color.Gray) },
-                    modifier = Modifier.weight(1f), singleLine = true,
-                    colors = TextFieldDefaults.outlinedTextFieldColors(textColor = Color.White, focusedBorderColor = AccentEmerald, backgroundColor = SurfaceDark),
-                    shape = RoundedCornerShape(12.dp)
-                )
-                Spacer(Modifier.width(12.dp))
-                Button(
-                    onClick = {
-                        if (commandInput.isNotBlank()) {
-                            val cmd = commandInput
-                            commandInput = ""
-                            if (isServerReady) {
-                                sendRconCommand(cmd) { res ->
-                                    coroutineScope.launch(Dispatchers.Main) {
-                                        onConsoleTextChange(consoleText + "\n[RCON] /$cmd -> " + if (res.isNotBlank()) res else "Gönderildi")
-                                    }
+        Spacer(Modifier.height(20.dp))
+
+        // ALT SATIR (Devasa Konsol Kutusu)
+        // Kutu 5: Konsol ve Komut Satırı (Bento)
+        Card(backgroundColor = Color(0xFF07090E), shape = RoundedCornerShape(16.dp), border = BorderStroke(1.dp, BorderColor), modifier = Modifier.fillMaxWidth().weight(1f)) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                Box(modifier = Modifier.weight(1f).fillMaxWidth().padding(16.dp)) {
+                    Column(modifier = Modifier.verticalScroll(scrollState)) {
+                        Text(text = consoleText, color = Color(0xFFA3BE8C), fontFamily = FontFamily.Monospace, fontSize = 13.sp, lineHeight = 18.sp)
+                    }
+                }
+
+                Divider(color = BorderColor, thickness = 1.dp)
+
+                Row(modifier = Modifier.fillMaxWidth().background(CardDark).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.ChevronRight, contentDescription = null, tint = AccentEmerald)
+                    Spacer(Modifier.width(8.dp))
+                    OutlinedTextField(
+                        value = commandInput, onValueChange = { commandInput = it },
+                        placeholder = { Text("Sunucuya komut gönder (örn: say Merhaba)", color = Color.Gray, fontSize = 13.sp) },
+                        modifier = Modifier.weight(1f).height(50.dp), singleLine = true,
+                        colors = TextFieldDefaults.outlinedTextFieldColors(textColor = Color.White, focusedBorderColor = Color.Transparent, unfocusedBorderColor = Color.Transparent, backgroundColor = Color.Transparent)
+                    )
+                    Button(
+                        onClick = {
+                            if (commandInput.isNotBlank()) {
+                                val cmd = commandInput
+                                commandInput = ""
+                                if (isServerReady) {
+                                    sendRconCommand(cmd) { res -> coroutineScope.launch(Dispatchers.Main) { onConsoleAppend("\n[RCON] /$cmd -> " + if (res.isNotBlank()) res else "Gönderildi") } }
+                                } else {
+                                    try {
+                                        val out = activeProcess?.outputStream
+                                        out?.write("$cmd\n".toByteArray(Charsets.UTF_8))
+                                        out?.flush()
+                                        coroutineScope.launch(Dispatchers.Main) { onConsoleAppend("\n[STDIN] > /$cmd (Motora direkt iletildi)") }
+                                    } catch(e: Exception) {}
                                 }
-                            } else {
-                                // TIKANIKLIK ÇÖZÜLDÜ: Stdin komutunu saf bayt olarak ilet
-                                try {
-                                    val out = activeProcess?.outputStream
-                                    out?.write("$cmd\n".toByteArray(Charsets.UTF_8))
-                                    out?.flush()
-                                    coroutineScope.launch(Dispatchers.Main) {
-                                        onConsoleTextChange(consoleText + "\n[STDIN] > /$cmd (Motora direkt iletildi)")
-                                    }
-                                } catch(e: Exception) {}
                             }
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(backgroundColor = AccentEmerald),
-                    modifier = Modifier.height(55.dp),
-                    shape = RoundedCornerShape(12.dp)
-                ) { Icon(Icons.Default.Send, contentDescription = "Gönder", tint = Color.Black) }
+                        },
+                        colors = ButtonDefaults.buttonColors(backgroundColor = AccentEmerald), shape = RoundedCornerShape(8.dp)
+                    ) { Text("GÖNDER", color = Color.Black, fontWeight = FontWeight.Bold) }
+                }
             }
         }
     }
@@ -1500,7 +1341,7 @@ fun FileManagerScreen() {
             isModSearching = true
             coroutineScope.launch(Dispatchers.IO) {
                 try {
-                    var mcVersion = "1.21.11"
+                    var mcVersion = "26.1"
                     try {
                         val verFile = File(currentDir.parentFile, "mc_version.txt")
                         if (verFile.exists()) mcVersion = verFile.readText().trim()
@@ -2091,6 +1932,7 @@ fun CreateServerScreen(onServerCreated: () -> Unit) {
     val coroutineScope = rememberCoroutineScope()
 
     val versionMap = mapOf(
+        "26.1" to "26.1", // YENİ EKLENEN SÜRÜM
         "1.21.11" to "1.21.11",
         "1.21.4" to "1.21.4",
         "1.21.1" to "1.21.1",
@@ -2105,7 +1947,7 @@ fun CreateServerScreen(onServerCreated: () -> Unit) {
     var profileName by remember { mutableStateOf("") }
     var version by remember { mutableStateOf(versionOptions[0]) }
 
-    val softwareOptions = listOf("PaperMC (Eklentiler)", "Fabric (Modlar)")
+    val softwareOptions = listOf("Vanilla (Saf/Orijinal)", "PaperMC (Eklentiler)", "Fabric (Modlar)")
     var software by remember { mutableStateOf(softwareOptions[0]) }
 
     var motd by remember { mutableStateOf("AServer") }
@@ -2233,7 +2075,8 @@ fun CreateServerScreen(onServerCreated: () -> Unit) {
 
                             File(serverDir, "eula.txt").writeText("eula=true")
 
-                            val actualVersion = versionMap[version] ?: "1.21.11"
+                            // Sürüm 26.1 güvenlik yaması
+                            val actualVersion = versionMap[version] ?: "26.1"
                             File(serverDir, "ram.txt").writeText(ram.toInt().toString())
                             File(serverDir, "mc_version.txt").writeText(actualVersion)
 
@@ -2254,6 +2097,7 @@ fun CreateServerScreen(onServerCreated: () -> Unit) {
                             """.trimIndent()
                             File(serverDir, "server.properties").writeText(props)
 
+                            // 1. KONTROL: FABRIC Mİ?
                             if (software.contains("Fabric")) {
                                 statusMessage = "Fabric Yükleyici aranıyor..."
                                 val metaUrl = URL("https://meta.fabricmc.net/v2/versions/installer")
@@ -2282,10 +2126,17 @@ fun CreateServerScreen(onServerCreated: () -> Unit) {
                                     throw Exception("Vanilla server.jar indirilemedi! Girdiğin sürüm ($actualVersion) Mojang sunucularında bulunmuyor olabilir.")
                                 }
 
-                            } else {
+                                // 2. KONTROL: PAPERMC Mİ?
+                            } else if (software.contains("Paper")) {
                                 statusMessage = "PaperMC $actualVersion aranıyor..."
                                 val apiUrl = URL("https://api.papermc.io/v2/projects/paper/versions/$actualVersion")
                                 val apiConn = apiUrl.openConnection() as HttpURLConnection
+
+                                // PaperMC API'si 404 (Bulunamadı) verirse düzgün hata mesajı göster
+                                if (apiConn.responseCode != 200) {
+                                    throw Exception("PaperMC bu sürümü ($actualVersion) henüz desteklemiyor!")
+                                }
+
                                 val response = apiConn.inputStream.bufferedReader().readText()
                                 val buildsStr = response.substringAfter("\"builds\":[").substringBefore("]")
                                 val builds = buildsStr.split(",").map { it.trim() }
@@ -2295,11 +2146,36 @@ fun CreateServerScreen(onServerCreated: () -> Unit) {
                                 val jarFile = File(serverDir, "server.jar")
                                 val downloadUrl = URL("https://api.papermc.io/v2/projects/paper/versions/$actualVersion/builds/$latestBuild/downloads/paper-$actualVersion-$latestBuild.jar")
                                 downloadUrl.openStream().use { input -> jarFile.outputStream().use { output -> input.copyTo(output) } }
+
+                                // 3. KONTROL: HİÇBİRİ DEĞİLSE (VANILLA)
+                            } else {
+                                statusMessage = "Vanilla $actualVersion aranıyor..."
+                                val manifestUrl = URL("https://piston-meta.mojang.com/mc/game/version_manifest_v2.json")
+                                val manifestConn = manifestUrl.openConnection() as HttpURLConnection
+                                val manifestResponse = manifestConn.inputStream.bufferedReader().readText()
+
+                                val versionRegex = Regex("\"id\"\\s*:\\s*\"$actualVersion\".*?\"url\"\\s*:\\s*\"([^\"]+)\"", RegexOption.DOT_MATCHES_ALL)
+                                val versionUrlStr = versionRegex.find(manifestResponse)?.groupValues?.get(1)
+                                    ?: throw Exception("Mojang sunucularında $actualVersion sürümü bulunamadı!")
+
+                                statusMessage = "Vanilla meta verileri çekiliyor..."
+                                val versionConn = URL(versionUrlStr).openConnection() as HttpURLConnection
+                                val versionResponse = versionConn.inputStream.bufferedReader().readText()
+
+                                val serverRegex = Regex("\"server\"\\s*:\\s*\\{[^}]*\"url\"\\s*:\\s*\"([^\"]+)\"")
+                                val serverJarUrlStr = serverRegex.find(versionResponse)?.groupValues?.get(1)
+                                    ?: throw Exception("Mojang bu sürüm ($actualVersion) için sunucu dosyası (server.jar) sağlamamış!")
+
+                                statusMessage = "Orijinal Vanilla Server indiriliyor..."
+                                val jarFile = File(serverDir, "server.jar")
+                                val downloadUrl = URL(serverJarUrlStr)
+                                downloadUrl.openStream().use { input -> jarFile.outputStream().use { output -> input.copyTo(output) } }
                             }
 
                             statusMessage = "BAŞARILI!"
                             launch(Dispatchers.Main) { onServerCreated() }
                         } catch (e: Exception) {
+                            // Hata mesajını sadeleştirip ekrana basıyoruz
                             statusMessage = "HATA: ${e.message}"
                         } finally {
                             isCreating = false
