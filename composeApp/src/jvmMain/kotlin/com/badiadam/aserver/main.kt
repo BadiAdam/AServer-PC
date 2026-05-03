@@ -1,4 +1,4 @@
-package com.badiadam.aserver // İŞTE EKSİK OLAN KİMLİK KARTI BUYDU!
+package com.badiadam.aserver
 
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.window.Window
